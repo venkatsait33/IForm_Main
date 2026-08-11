@@ -1,0 +1,19 @@
+@page "/logout"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager Navigation
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var http = HttpContextAccessor.HttpContext;
+        if (http?.User.Identity?.IsAuthenticated == true)
+        {
+            await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        }
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}

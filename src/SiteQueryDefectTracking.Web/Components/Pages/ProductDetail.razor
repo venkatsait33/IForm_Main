@@ -1,0 +1,98 @@
+@page "/products/{id:guid}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ApiClient Api
+
+<PageTitle>Product @product?.Code</PageTitle>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger py-2">@error</div>
+    <a class="btn btn-outline-secondary" href="/products">Back to products</a>
+}
+else if (product is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="d-flex align-items-center mb-3">
+        <a class="btn btn-sm btn-outline-secondary me-2" href="/products">&laquo; Back</a>
+        <h1 class="mb-0 fs-3">@product.Code</h1>
+        @if (!product.IsActive)
+        {
+            <span class="badge text-bg-secondary ms-2">Inactive</span>
+        }
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">Details</div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Description</dt>
+                <dd class="col-sm-9">@product.Description</dd>
+                <dt class="col-sm-3">Category</dt>
+                <dd class="col-sm-9">@(product.Category ?? "—")</dd>
+                <dt class="col-sm-3">Unit</dt>
+                <dd class="col-sm-9">@(product.Unit ?? "—")</dd>
+                <dt class="col-sm-3">Barcode</dt>
+                <dd class="col-sm-9">@(product.Barcode ?? "—")</dd>
+                @if (product.LastImportedAt is not null)
+                {
+                    <dt class="col-sm-3">Last Imported</dt>
+                    <dd class="col-sm-9">@product.LastImportedAt?.LocalDateTime.ToString("dd MMM yyyy")</dd>
+                }
+            </dl>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header fw-semibold">Specifications (@product.Specifications.Count)</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var s in product.Specifications)
+                    {
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span class="text-muted">@s.AttributeName</span>
+                            <span>@s.AttributeValue</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header fw-semibold">Mapped Projects (@product.ProjectMappings.Count)</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var m in product.ProjectMappings)
+                    {
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>@m.ProjectName</span>
+                            <span class="text-muted">@(m.IsActive ? "Active" : "Inactive")</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ProductDetailDto? product;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            product = await Api.GetAsync<ProductDetailDto>($"api/products/{Id}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

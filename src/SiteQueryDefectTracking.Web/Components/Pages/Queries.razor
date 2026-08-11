@@ -1,0 +1,151 @@
+@page "/queries"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Search &amp; Resolve</PageTitle>
+
+<h1>Search &amp; Resolve Queries</h1>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger py-2">@error</div>
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-3">
+                <input class="form-control" @bind="search.Keyword" placeholder="Keyword / description" />
+            </div>
+            <div class="col-md-2">
+                <input class="form-control" @bind="search.IPO" placeholder="IPO" />
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" @bind="search.ProjectId">
+                    <option value="">All projects</option>
+                    @foreach (var p in projects)
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" @bind="search.Status">
+                    <option value="">All statuses</option>
+                    <option value="@QueryStatus.Pending">Pending</option>
+                    <option value="@QueryStatus.InProgress">In Progress</option>
+                    <option value="@QueryStatus.Resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary" @onclick="ReloadAsync">Search</button>
+            </div>
+        </div>
+        <div class="form-check mt-2">
+            <input id="mineOnly" class="form-check-input" type="checkbox" @bind="search.MineOnly" />
+            <label class="form-check-label" for="mineOnly">Only queries I raised</label>
+        </div>
+    </div>
+</div>
+
+@if (result is not null)
+{
+    <p class="text-muted">
+        Showing @result.Items.Count of @result.TotalCount queries (page @result.Page of @result.TotalPages).
+    </p>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>IPO</th>
+                    <th>Project</th>
+                    <th>Issue Type</th>
+                    <th>Status</th>
+                    <th>Qty (nos)</th>
+                    <th>Delay</th>
+                    <th>Raised By</th>
+                    <th>Raised Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var q in result.Items)
+                {
+                    <tr class="cursor-pointer" @onclick="() => GoQuery(q)">
+                        <td>@q.IPO</td>
+                        <td>@q.ProjectName</td>
+                        <td>@q.IssueTypeName</td>
+                        <td><span class="badge @q.StatusCss">@q.StatusLabel</span></td>
+                        <td>@q.QuantityNos</td>
+                        <td class="@(q.DelayDays > 0 ? "text-danger" : "")">@q.DelayDays d</td>
+                        <td>@q.RaisedByName</td>
+                        <td>@q.RaiseDate.LocalDateTime.ToString("dd MMM yyyy")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (result.TotalPages > 1)
+    {
+        <nav class="mt-2">
+            <ul class="pagination pagination-sm">
+                <li class="page-item @(prevDisabled)">
+                    <button class="page-link" @onclick="() => LoadPageAsync(result.Page - 1)">Prev</button>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link">@result.Page / @result.TotalPages</span>
+                </li>
+                <li class="page-item @(nextDisabled)">
+                    <button class="page-link" @onclick="() => LoadPageAsync(result.Page + 1)">Next</button>
+                </li>
+            </ul>
+        </nav>
+    }
+}
+
+@code {
+    private QuerySearchPayload search = new();
+    private PagedResult<QuerySummaryDto>? result;
+    private List<LookupItem> projects = new();
+    private string? error;
+
+    private string prevDisabled => result is null || result.Page <= 1 ? "disabled" : string.Empty;
+    private string nextDisabled => result is null || result.Page >= result.TotalPages ? "disabled" : string.Empty;
+
+    private void GoQuery(QuerySummaryDto q) => Navigation.NavigateTo($"/queries/{q.Id}");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            projects = await Api.GetAsync<List<LookupItem>>("api/projects/active") ?? new();
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        search.Page = 1;
+        await LoadPageAsync(1);
+    }
+
+    private async Task LoadPageAsync(int page)
+    {
+        search.Page = page;
+        error = null;
+        try
+        {
+            result = await Api.GetAsync<PagedResult<QuerySummaryDto>>($"api/queries?{search.ToQueryString()}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

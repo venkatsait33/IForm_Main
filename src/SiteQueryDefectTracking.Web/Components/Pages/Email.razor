@@ -1,0 +1,197 @@
+@page "/email"
+@attribute [Authorize(Roles = "Manager")]
+@rendermode InteractiveServer
+@inject ApiClient Api
+
+<PageTitle>Auto Email</PageTitle>
+
+<h1>Auto Email</h1>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger py-2">@error</div>
+}
+
+<div class="card mb-3">
+    <div class="card-header fw-semibold">1. Find a query</div>
+    <div class="card-body">
+        <div class="input-group">
+            <input class="form-control" @bind="queryKeyword" placeholder="IPO or keyword..." />
+            <button class="btn btn-outline-secondary" @onclick="SearchQueriesAsync">Search</button>
+        </div>
+        @if (queryResults is not null)
+        {
+            <ul class="list-group mt-2">
+                @foreach (var q in queryResults.Items)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center @(selectedQueryId == q.Id ? "active" : "")"
+                        style="cursor:pointer" @onclick="() => SelectQueryAsync(q)">
+                        <div>
+                            <span class="fw-semibold">@q.IPO</span>
+                            <span class="ms-2 text-@(selectedQueryId == q.Id ? "white" : "muted")">@q.ProjectName &middot; @q.IssueTypeName</span>
+                        </div>
+                        <span class="badge @q.StatusCss">@q.StatusLabel</span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+</div>
+
+@if (selectedQuery is not null)
+{
+    <div class="card mb-3">
+        <div class="card-header fw-semibold">2. Generate email for @selectedQuery.IPO</div>
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label">Template</label>
+                    <select class="form-select" @bind="selectedTemplateId">
+                        <option value="">-- Select template --</option>
+                        @foreach (var t in templates)
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Recipient</label>
+                    <input class="form-control" @bind="recipient" placeholder="Override recipient (optional)" />
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button class="btn btn-primary" @onclick="GenerateAsync" disabled="@generating">Generate</button>
+                </div>
+            </div>
+
+            @if (generated is not null)
+            {
+                <div class="mt-3">
+                    <div class="alert alert-info py-2 small">
+                        <strong>From:</strong> @generated.From
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">To</label>
+                        <input class="form-control" @bind="editTo" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Subject</label>
+                        <input class="form-control" @bind="editSubject" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Body</label>
+                        <textarea class="form-control" rows="10" @bind="editBody"></textarea>
+                    </div>
+                    @if (generated.AvailableTokens.Count > 0)
+                    {
+                        <div class="small text-muted mb-2">
+                            Available tokens: @string.Join(", ", generated.AvailableTokens)
+                        </div>
+                    }
+                    <button class="btn btn-success" @onclick="SendAsync" disabled="@sending">Send Email</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string queryKeyword = string.Empty;
+    private PagedResult<QuerySummaryDto>? queryResults;
+    private Guid? selectedQueryId;
+    private QuerySummaryDto? selectedQuery;
+    private List<EmailTemplateDto> templates = new();
+    private Guid? selectedTemplateId;
+    private string? recipient;
+    private GeneratedEmailDto? generated;
+    private string? editTo;
+    private string? editSubject;
+    private string? editBody;
+    private bool generating;
+    private bool sending;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            templates = await Api.GetAsync<List<EmailTemplateDto>>("api/email/templates") ?? new();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task SearchQueriesAsync()
+    {
+        error = null;
+        try
+        {
+            var search = new QuerySearchPayload { Page = 1, PageSize = 25, Keyword = string.IsNullOrWhiteSpace(queryKeyword) ? null : queryKeyword.Trim() };
+            queryResults = await Api.GetAsync<PagedResult<QuerySummaryDto>>($"api/queries?{search.ToQueryString()}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task SelectQueryAsync(QuerySummaryDto q)
+    {
+        selectedQueryId = q.Id;
+        selectedQuery = q;
+        generated = null;
+        await Task.CompletedTask;
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (selectedQueryId is null || !selectedTemplateId.HasValue) return;
+        generating = true;
+        error = null;
+        try
+        {
+            generated = await Api.PostAsync<GeneratedEmailDto>("api/email/generate",
+                new { queryId = selectedQueryId, templateId = selectedTemplateId, recipient = string.IsNullOrWhiteSpace(recipient) ? null : recipient });
+            editTo = generated.To;
+            editSubject = generated.Subject;
+            editBody = generated.Body;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            generated = null;
+        }
+        finally
+        {
+            generating = false;
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (generated is null || selectedQueryId is null) return;
+        sending = true;
+        error = null;
+        try
+        {
+            var sentId = await Api.PostAsync<Guid>("api/email/send", new
+            {
+                queryId = selectedQueryId,
+                recipient = editTo,
+                subject = editSubject,
+                body = editBody,
+                templateId = generated.TemplateId
+            });
+            error = sentId == Guid.Empty ? "Email could not be sent." : "Email sent.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+}

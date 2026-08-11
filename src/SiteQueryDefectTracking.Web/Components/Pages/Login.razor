@@ -1,0 +1,104 @@
+@page "/login"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@inject ApiClient Api
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Sign In - IFORM Site Query</PageTitle>
+
+<h1 class="h3 mb-4 text-center">Site Query &amp; Defect Tracking</h1>
+
+<EditForm Model="Model" OnValidSubmit="HandleLogin" FormName="login" class="needs-validation">
+    <div class="mb-3">
+        <label class="form-label" for="login-username">User name or e-mail</label>
+        <InputText id="login-username" class="form-control" @bind-Value="Model.UserNameOrEmail" autofocus autocomplete="username" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="login-password">Password</label>
+        <InputText id="login-password" type="password" class="form-control" @bind-Value="Model.Password" autocomplete="current-password" />
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger py-2">@errorMessage</div>
+    }
+
+    <div class="d-grid">
+        <button type="submit" class="btn btn-primary" disabled="@busy">
+            @(busy ? "Signing in..." : "Sign in")
+        </button>
+    </div>
+
+    <div class="mt-3 small text-muted text-center">
+        Demo accounts &middot; password Demo@1234!
+        <br />
+        manager@demo.local (Manager) &middot; siteengineer@demo.local / engineer2@demo.local (Site Engineer)
+    </div>
+</EditForm>
+
+@code {
+    private sealed class LoginCredentials
+    {
+        public string UserNameOrEmail { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+
+    [SupplyParameterFromForm(Name = "Model")]
+    private LoginCredentials? suppliedModel { get; set; }
+
+    private LoginCredentials Model => suppliedModel ??= new LoginCredentials();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+    }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private bool busy;
+    private string? errorMessage;
+
+    private async Task HandleLogin()
+    {
+        busy = true;
+        errorMessage = null;
+        try
+        {
+            await Api.LoginAsync(Model.UserNameOrEmail, Model.Password);
+            var http = HttpContextAccessor.HttpContext;
+            if (http is null)
+            {
+                errorMessage = "No HTTP context available for sign-in.";
+                return;
+            }
+
+            await http.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                Api.CreatePrincipal(),
+                new AuthenticationProperties { IsPersistent = true });
+
+            Navigation.NavigateTo(string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl, forceLoad: true);
+        }
+        catch (ApiException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Unexpected error: {ex.Message}";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

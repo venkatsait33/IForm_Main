@@ -1,0 +1,136 @@
+@page "/products"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Product Lookup</PageTitle>
+
+<h1>Product Lookup</h1>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger py-2">@error</div>
+}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <input class="form-control" @bind="query" placeholder="Search code / description" />
+            </div>
+            <div class="col-md-3">
+                <input class="form-control" @bind="category" placeholder="Category" />
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" @bind="projectId">
+                    <option value="">All projects</option>
+                    @foreach (var p in projects)
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary" @onclick="SearchAsync">Search</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (result is not null)
+{
+    <p class="text-muted">@result.TotalCount products found.</p>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Unit</th>
+                    <th>Mappings</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in result.Items)
+                {
+                    <tr class="cursor-pointer" @onclick="() => GoProduct(p)">
+                        <td class="fw-semibold">@p.Code</td>
+                        <td>@p.Description</td>
+                        <td>@p.Category</td>
+                        <td>@p.Unit</td>
+                        <td>@p.ProjectMappingCount</td>
+                        <td>&raquo;</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (result.TotalPages > 1)
+    {
+        <ul class="pagination pagination-sm">
+            <li class="page-item @(prevDisabled)">
+                <button class="page-link" @onclick="() => LoadPageAsync(currentPage - 1)">Prev</button>
+            </li>
+            <li class="page-item disabled"><span class="page-link">@currentPage / @result.TotalPages</span></li>
+            <li class="page-item @(nextDisabled)">
+                <button class="page-link" @onclick="() => LoadPageAsync(currentPage + 1)">Next</button>
+            </li>
+        </ul>
+    }
+}
+
+@code {
+    private string query = string.Empty;
+    private string category = string.Empty;
+    private Guid? projectId;
+    private int currentPage = 1;
+    private PagedResult<ProductSummaryDto>? result;
+    private List<LookupItem> projects = new();
+    private string? error;
+
+    private string prevDisabled => currentPage <= 1 ? "disabled" : string.Empty;
+    private string nextDisabled => result is null || currentPage >= result.TotalPages ? "disabled" : string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            projects = await Api.GetAsync<List<LookupItem>>("api/projects/active") ?? new();
+            await SearchAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private void GoProduct(ProductSummaryDto p) => Navigation.NavigateTo($"/products/{p.Id}");
+
+    private async Task SearchAsync()
+    {
+        currentPage = 1;
+        await LoadPageAsync(1);
+    }
+
+    private async Task LoadPageAsync(int p)
+    {
+        currentPage = p;
+        error = null;
+        try
+        {
+            var parts = new List<string> { $"page={currentPage}", "pageSize=25" };
+            if (!string.IsNullOrWhiteSpace(query)) parts.Add($"query={Uri.EscapeDataString(query)}");
+            if (!string.IsNullOrWhiteSpace(category)) parts.Add($"category={Uri.EscapeDataString(category)}");
+            if (projectId.HasValue) parts.Add($"projectId={projectId}");
+            result = await Api.GetAsync<PagedResult<ProductSummaryDto>>($"api/products?{string.Join('&', parts)}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

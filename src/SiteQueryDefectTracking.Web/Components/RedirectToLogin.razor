@@ -1,0 +1,18 @@
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/access-denied", forceLoad: true);
+        }
+        else
+        {
+            var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+            Navigation.NavigateTo($"/login?returnUrl={returnUrl}", forceLoad: true);
+        }
+    }
+}

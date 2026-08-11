@@ -1,0 +1,247 @@
+@page "/queries/{id:guid}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ApiClient Api
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Query @detail?.IPO</PageTitle>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger py-2">@error</div>
+    <a class="btn btn-outline-secondary" href="/queries">Back to search</a>
+}
+else if (detail is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="d-flex align-items-center mb-3">
+        <a class="btn btn-sm btn-outline-secondary me-2" href="/queries">&laquo; Back</a>
+        <h1 class="mb-0 fs-3">Query @detail.IPO</h1>
+        <span class="badge @detail.StatusCss ms-2">@detail.StatusLabel</span>
+        @if (detail.IsSlaBreached)
+        {
+            <span class="badge text-bg-danger ms-2">SLA breached (@detail.DelayDays d)</span>
+        }
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Details</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-3">Project</dt>
+                        <dd class="col-sm-9">@detail.ProjectName</dd>
+                        <dt class="col-sm-3">Issue Type</dt>
+                        <dd class="col-sm-9">@detail.IssueTypeName</dd>
+                        <dt class="col-sm-3">Quantity</dt>
+                        <dd class="col-sm-9">@detail.QuantityNos nos @(detail.QuantitySqm is null ? "" : $"/ {detail.QuantitySqm} sqm")</dd>
+                        <dt class="col-sm-3">Product Code</dt>
+                        <dd class="col-sm-9">@(detail.ProductCode ?? "—")</dd>
+                        <dt class="col-sm-3">Dispatch</dt>
+                        <dd class="col-sm-9">@(detail.DispatchStatus ?? "—")</dd>
+                        <dt class="col-sm-3">Raised By</dt>
+                        <dd class="col-sm-9">@detail.RaisedByName on @detail.RaiseDate.LocalDateTime.ToString("dd MMM yyyy")</dd>
+                        @if (detail.ResolvedByName is not null)
+                        {
+                            <dt class="col-sm-3">Resolved By</dt>
+                            <dd class="col-sm-9">@detail.ResolvedByName on @detail.ResolvedDate?.LocalDateTime.ToString("dd MMM yyyy")</dd>
+                        }
+                        <dt class="col-sm-3">Days Open</dt>
+                        <dd class="col-sm-9">@detail.DelayDays d</dd>
+                        <dt class="col-sm-3">Slab</dt>
+                        <dd class="col-sm-9">@(detail.SlabTarget ?? "—") @(detail.SlabCompleted is null ? "" : $"→ {detail.SlabCompleted}") @(detail.SlabDelayDays.HasValue ? $"· {detail.SlabDelayDays} d delay" : "")</dd>
+                    </dl>
+                    @if (!string.IsNullOrWhiteSpace(detail.Description))
+                    {
+                        <hr />
+                        <h6>Description</h6>
+                        <p class="mb-0 white-space-pre-line">@detail.Description</p>
+                    }
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Attachments (@detail.Attachments.Count)</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var a in detail.Attachments)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="fw-semibold">@a.OriginalFileName</span>
+                                <span class="text-muted ms-2">@a.SizeLabel</span>
+                            </div>
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => DownloadAsync(a)">Download</button>
+                        </li>
+                    }
+                </ul>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Comments (@detail.Comments.Count)</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var c in detail.Comments)
+                    {
+                        <li class="list-group-item">
+                            <div class="small text-muted">@c.UserName &middot; @c.CreatedAt.LocalDateTime.ToString("dd MMM yyyy HH:mm")</div>
+                            <div>@c.CommentText</div>
+                        </li>
+                    }
+                </ul>
+                @if (detail.Comments.Count == 0)
+                {
+                    <div class="card-body text-muted">No comments yet.</div>
+                }
+                <div class="card-body">
+                    <div class="input-group">
+                        <input class="form-control" @bind="newComment" placeholder="Add a comment..." />
+                        <button class="btn btn-outline-secondary" @onclick="AddCommentAsync">Post</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">Emails (@detail.Emails.Count)</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var e in detail.Emails)
+                    {
+                        <li class="list-group-item">
+                            <div class="fw-semibold small">@e.Subject</div>
+                            <div class="small text-muted">@e.TemplateName &middot; @e.Status</div>
+                        </li>
+                    }
+                </ul>
+            </div>
+
+            <AuthorizeView Roles="Manager">
+                <div class="card">
+                    <div class="card-header fw-semibold">Actions</div>
+                    <div class="card-body">
+                        @if (detail.Status != Models.QueryStatus.Resolved)
+                        {
+                            @if (detail.Status == Models.QueryStatus.Pending)
+                            {
+                                <button class="btn btn-outline-primary w-100 mb-2" @onclick="MarkInProgressAsync" disabled="@changingStatus">
+                                    @(changingStatus ? "Updating..." : "Mark In Progress")
+                                </button>
+                            }
+                            <div class="mb-2">
+                                <textarea class="form-control" rows="3" @bind="resolutionNote" placeholder="Resolution note"></textarea>
+                            </div>
+                            <button class="btn btn-success w-100" @onclick="ResolveAsync" disabled="@resolving">
+                                @(resolving ? "Resolving..." : "Mark Resolved")
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="text-success">Resolved</span>
+                        }
+                    </div>
+                </div>
+            </AuthorizeView>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private QueryDetailDto? detail;
+    private string? error;
+    private string newComment = string.Empty;
+    private string? resolutionNote;
+    private bool resolving;
+    private bool changingStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        error = null;
+        try
+        {
+            detail = await Api.GetAsync<QueryDetailDto>($"api/queries/{Id}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task AddCommentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newComment)) return;
+        try
+        {
+            await Api.PostAsync<CommentDto>($"api/queries/{Id}/comments", new { commentText = newComment.Trim() });
+            newComment = string.Empty;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task MarkInProgressAsync()
+    {
+        changingStatus = true;
+        error = null;
+        try
+        {
+            await Api.PutAsync<QuerySummaryDto>(
+                $"api/queries/{Id}/status",
+                new { status = Models.QueryStatus.InProgress, reason = "Started working on this query" });
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            changingStatus = false;
+        }
+    }
+
+    private async Task ResolveAsync()
+    {
+        resolving = true;
+        error = null;
+        try
+        {
+            await Api.PutAsync<Guid>($"api/queries/{Id}/resolve", new { resolutionNote });
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            resolving = false;
+        }
+    }
+
+    private async Task DownloadAsync(AttachmentDto attachment)
+    {
+        try
+        {
+            var bytes = await Api.DownloadBytesAsync($"api/queries/{Id}/attachments/{attachment.Id}/download");
+            await JS.InvokeVoidAsync("sqdDownload", attachment.OriginalFileName, Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

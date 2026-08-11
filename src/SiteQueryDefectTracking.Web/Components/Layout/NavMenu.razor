@@ -1,0 +1,45 @@
+﻿<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">IFORM Site Query</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <AuthorizeView Roles="Manager">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="dashboard" Match="NavLinkMatch.Prefix">
+                    <span class="bi bi-speedometer2-nav-menu" aria-hidden="true"></span> Dashboard
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="report">
+                <span class="bi bi-file-plus-fill-nav-menu" aria-hidden="true"></span> Report Query
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="queries" Match="NavLinkMatch.Prefix">
+                <span class="bi bi-search-nav-menu" aria-hidden="true"></span> Search &amp; Resolve
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="products" Match="NavLinkMatch.Prefix">
+                <span class="bi bi-box-seam-nav-menu" aria-hidden="true"></span> Product Lookup
+            </NavLink>
+        </div>
+
+        <AuthorizeView Roles="Manager">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="email">
+                    <span class="bi bi-envelope-fill-nav-menu" aria-hidden="true"></span> Auto Email
+                </NavLink>
+            </div>
+        </AuthorizeView>
+    </nav>
+</div>

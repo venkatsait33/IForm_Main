@@ -1,0 +1,249 @@
+@page "/report"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Report Query</PageTitle>
+
+<h1>Report a Site Query</h1>
+
+@if (message is not null)
+{
+    <div class="alert @(messageIsError ? "alert-danger" : "alert-success") py-2">
+        @message
+        @if (loadErrorDetail is not null)
+        {
+            <div class="small text-muted mt-1">@loadErrorDetail</div>
+        }
+    </div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Project *</label>
+                    <select class="form-select" @bind="form.ProjectId">
+                        <option value="">-- Select project --</option>
+                        @foreach (var p in projects)
+                        {
+                            <option value="@p.Id">@p.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Issue Type *</label>
+                    <select class="form-select" @bind="form.IssueTypeId">
+                        <option value="">-- Select issue type --</option>
+                        @foreach (var t in issueTypes)
+                        {
+                            <option value="@t.Id">@t.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">IPO</label>
+                        <input class="form-control" @bind="form.IPO" placeholder="e.g. IPO-00128" />
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Qty (nos) *</label>
+                        <input class="form-control" type="number" min="0" @bind="form.QuantityNos" />
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Qty (sqm) *</label>
+                        <input class="form-control" type="number" step="0.01" min="0" @bind="form.QuantitySqm" />
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Product Code</label>
+                        <input class="form-control" @bind="form.ProductCodeText" placeholder="Start typing to look up" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Dispatch Status</label>
+                        <select class="form-select" @bind="form.DispatchStatusName">
+                            <option value="">-- Select --</option>
+                            @foreach (var s in dispatchStatuses)
+                            {
+                                <option value="@s.Name">@s.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Slab Target</label>
+                        <input class="form-control" @bind="form.SlabTarget" placeholder="e.g. Level 3" />
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Slab Completed</label>
+                        <input class="form-control" @bind="form.SlabCompleted" placeholder="e.g. Level 2" />
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Slab Delay (days)</label>
+                        <input class="form-control" type="number" min="0" @bind="form.SlabDelayDays" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" rows="3" @bind="form.Description"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Supporting Photo *</label>
+                    <InputFile class="form-control" OnChange="OnFileSelected" accept="image/*" />
+                    @if (fileName is not null)
+                    {
+                        <div class="form-text">Selected: @fileName</div>
+                    }
+                </div>
+
+                <button class="btn btn-primary" @onclick="SubmitAndReset" disabled="@busy">
+                    @(busy ? "Submitting..." : "Submit Query")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private sealed class ReportForm
+    {
+        public Guid ProjectId { get; set; }
+        public Guid IssueTypeId { get; set; }
+        public string IPO { get; set; } = string.Empty;
+        public int? QuantityNos { get; set; }
+        public decimal? QuantitySqm { get; set; }
+        public string? ProductCodeText { get; set; }
+        public string? DispatchStatusName { get; set; }
+        public string? SlabTarget { get; set; }
+        public string? SlabCompleted { get; set; }
+        public int? SlabDelayDays { get; set; }
+        public string? Description { get; set; }
+    }
+
+    private readonly ReportForm form = new();
+    private List<LookupItem> projects = new();
+    private List<LookupItem> issueTypes = new();
+    private List<EnumOption> dispatchStatuses = new();
+
+    private byte[]? selectedBytes;
+    private string? fileName;
+    private bool busy;
+    private string? message;
+    private bool messageIsError;
+    private string? loadErrorDetail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            projects = await Api.GetAsync<List<LookupItem>>("api/projects/active") ?? new();
+            issueTypes = await Api.GetAsync<List<LookupItem>>("api/reference/issue-types") ?? new();
+            dispatchStatuses = await Api.GetAsync<List<EnumOption>>("api/reference/dispatch-statuses") ?? new();
+        }
+        catch (Exception ex)
+        {
+            message = "Failed to load reference data. Is the API running?";
+            messageIsError = true;
+            loadErrorDetail = $"Detail: {ex.GetBaseException().Message}";
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null)
+        {
+            selectedBytes = null;
+            fileName = null;
+            return;
+        }
+
+        fileName = file.Name;
+        using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        selectedBytes = ms.ToArray();
+    }
+
+    private async Task SubmitAndReset()
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            if (form.ProjectId == Guid.Empty || form.IssueTypeId == Guid.Empty)
+            {
+                throw new ApiException("Project and Issue Type are required.");
+            }
+
+            if (selectedBytes is null || selectedBytes.Length == 0)
+            {
+                throw new ApiException("A supporting photo is required.");
+            }
+
+            var payload = new CreateQueryPayload
+            {
+                ProjectId = form.ProjectId,
+                IssueTypeId = form.IssueTypeId,
+                IPO = form.IPO?.Trim() ?? string.Empty,
+                QuantityNos = form.QuantityNos,
+                QuantitySqm = form.QuantitySqm,
+                ProductCodeText = string.IsNullOrWhiteSpace(form.ProductCodeText) ? null : form.ProductCodeText,
+                DispatchStatus = string.IsNullOrWhiteSpace(form.DispatchStatusName) ? null : form.DispatchStatusName,
+                SlabTarget = string.IsNullOrWhiteSpace(form.SlabTarget) ? null : form.SlabTarget,
+                SlabCompleted = string.IsNullOrWhiteSpace(form.SlabCompleted) ? null : form.SlabCompleted,
+                SlabDelayDays = form.SlabDelayDays,
+                Description = form.Description
+            };
+
+            var newId = await Api.PostAsync<Guid>("api/queries", payload);
+            if (newId == Guid.Empty)
+            {
+                throw new ApiException("Query was not created.");
+            }
+
+            if (selectedBytes is not null && selectedBytes.Length > 0)
+            {
+                await Api.UploadAsync<AttachmentDto>(
+                    $"api/queries/{newId}/attachments",
+                    selectedBytes,
+                    fileName ?? "photo.jpg",
+                    "image/jpeg");
+            }
+
+            message = $"Query {payload.IPO} created successfully.";
+            form.ProductCodeText = string.Empty;
+            form.Description = null;
+            form.QuantityNos = null;
+            form.QuantitySqm = null;
+            form.IPO = string.Empty;
+            form.SlabTarget = null;
+            form.SlabCompleted = null;
+            form.SlabDelayDays = null;
+            selectedBytes = null;
+            fileName = null;
+
+            await Task.Delay(400);
+            Navigation.NavigateTo($"/queries/{newId}", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageIsError = true;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

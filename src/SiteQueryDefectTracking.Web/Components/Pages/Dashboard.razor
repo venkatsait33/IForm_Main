@@ -1,0 +1,168 @@
+@page "/dashboard"
+@attribute [Authorize(Roles = "Manager")]
+@rendermode InteractiveServer
+@implements IDisposable
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard</PageTitle>
+
+<h1>Manager Dashboard</h1>
+
+@if (snapshot is null)
+{
+    <p>Loading dashboard...</p>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-2">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="stat-value text-warning">@snapshot.Summary?.TotalOpenQueries</div>
+                    <div class="stat-label">Open</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-2">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="stat-value text-info">@snapshot.Summary?.Pending</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-2">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="stat-value text-primary">@snapshot.Summary?.InProgress</div>
+                    <div class="stat-label">In Progress</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-2">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="stat-value text-success">@snapshot.Summary?.ResolvedTotal</div>
+                    <div class="stat-label">Resolved (all)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-2">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="stat-value text-danger">@snapshot.Summary?.CriticalDelays</div>
+                    <div class="stat-label">Critical Delays</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-2">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="stat-value">@snapshot.Summary?.AverageDelay.ToString("0.0")</div>
+                    <div class="stat-label">Avg Delay (days)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header fw-semibold">Open Queries</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>IPO</th>
+                                <th>Project</th>
+                                <th>Issue Type</th>
+                                <th>Raised By</th>
+                                <th>Status</th>
+                                <th>Delay</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var q in snapshot.OpenQueries)
+                            {
+                                <tr class="cursor-pointer" @onclick="() => GoQuery(q)">
+                                    <td>@q.IPO</td>
+                                    <td>@q.ProjectName</td>
+                                    <td>@q.IssueTypeName</td>
+                                    <td>@q.RaisedByName</td>
+                                    <td><span class="badge @q.StatusCss">@q.StatusLabel</span></td>
+                                    <td class="@(q.DelayDays > 0 ? "text-danger" : "")">@q.DelayDays d</td>
+                                    <td>&raquo;</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header fw-semibold">By Issue Type</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var item in snapshot.Issues)
+                    {
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>@item.IssueTypeName</span>
+                            <span class="badge text-bg-secondary">@item.OpenCount open</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+            <div class="card">
+                <div class="card-header fw-semibold">By Project</div>
+                <ul class="list-group list-group-flush">
+                    @foreach (var item in snapshot.Projects)
+                    {
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>@item.ProjectName</span>
+                            <span class="badge text-bg-secondary">@item.OpenCount open</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DashboardSnapshotDto? snapshot;
+    private System.Threading.Timer? _refreshTimer;
+    private bool _refreshing;
+
+    private void GoQuery(QuerySummaryDto q) => Navigation.NavigateTo($"/queries/{q.Id}");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        _refreshTimer = new System.Threading.Timer(
+            async _ => await InvokeAsync(RefreshAsync),
+            null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            snapshot = await Api.GetAsync<DashboardSnapshotDto>("api/dashboard/snapshot");
+        }
+        catch
+        {
+            // keep last snapshot if a refresh fails
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    public void Dispose() => _refreshTimer?.Dispose();
+}
