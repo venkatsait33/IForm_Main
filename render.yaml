@@ -1,49 +1,18 @@
 databases:
   - name: iform-quality-db
     plan: free
-    databaseName: sitequerydefecttracking
-    user: sitequery
+    postgresMajorVersion: 16
 
 services:
   - type: web
-    name: iform-quality-api
+    name: iform-quality-app
     runtime: docker
-    dockerfilePath: ./Dockerfile.Api
-    dockerContext: .
     plan: free
-    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
-      - key: ConnectionStrings__DefaultConnection
+      - key: DATABASE_URL
         fromDatabase:
           name: iform-quality-db
           property: connectionString
-      - key: Jwt__SecretKey
-        generateValue: true
-      - key: Cors__Origins__0
-        fromService:
-          type: web
-          name: iform-quality-web
-          property: host
-      - key: Application__WebBaseUrl
-        fromService:
-          type: web
-          name: iform-quality-web
-          property: host
-
-  - type: web
-    name: iform-quality-web
-    runtime: docker
-    dockerfilePath: ./Dockerfile.Web
-    dockerContext: .
-    plan: free
-    healthCheckPath: /
-    envVars:
-      - key: ASPNETCORE_ENVIRONMENT
-        value: Production
-      - key: Api__BaseUrl
-        fromService:
-          type: web
-          name: iform-quality-api
-          property: hostport
